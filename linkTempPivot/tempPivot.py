@@ -140,7 +140,7 @@ class TempPivot(object):
     def clear(self, *args):
         
         def _clear():
-            if len(self.transformNodes) == 1:
+            if len(self.transformNodes) == 1 and self.masterGroup is not None and self.masterGroup.exists:
                 manager.TempPivotManager.cacheLocalMatrix(self.masterGroup, self.transformNodes[0])
                 
             try: om2.MEventMessage.removeCallbacks(self.callbackIndices)
@@ -153,4 +153,5 @@ class TempPivot(object):
                 self.masterGroup.depFn.isLocked = False
                 dagMod.deleteNode(self.masterGroup.mobject)
                 dagMod.doIt()
+
         cmds.evalDeferred(_clear)
