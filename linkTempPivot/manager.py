@@ -106,8 +106,10 @@ class TempPivotManager(object):
 
     @classmethod
     def connectAsset(cls, masterGroup, container):
+        cmds.undoInfo(stateWithoutFlush=False)
         cmds.container(container.name, edit=True, addNode=masterGroup.fullPathName, includeHierarchyBelow=True)
         cmds.container(container.name, edit=True, publishAsRoot=[masterGroup.fullPathName, True])
+        cmds.undoInfo(stateWithoutFlush=True)
              
              
     @classmethod
@@ -128,4 +130,5 @@ class TempPivotManager(object):
             masterGroup.worldMatrix = transformNode.worldMatrix
         else:
             masterGroup.worldMatrix = om2.MMatrix(localMatrix) * transformNode.worldMatrix
+
 
