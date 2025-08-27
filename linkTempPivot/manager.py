@@ -12,7 +12,7 @@ class ContainerNode(nodes.BaseNode):
     
     
     def __init__(self, node):
-        super().__init__(node)
+        super(ContainerNode, self).__init__(node)
         self.setBlackBox(True)
         
         
@@ -128,3 +128,4 @@ class TempPivotManager(object):
             masterGroup.worldMatrix = transformNode.worldMatrix
         else:
             masterGroup.worldMatrix = om2.MMatrix(localMatrix) * transformNode.worldMatrix
+
