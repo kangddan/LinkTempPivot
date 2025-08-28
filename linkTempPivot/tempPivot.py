@@ -1,19 +1,22 @@
-from maya          import cmds
-from maya.api      import OpenMaya as om2
-from linkTempPivot import nodes, manager, utils
+from maya     import cmds
+from maya.api import OpenMaya as om2
+from        . import nodes, manager, utils
 
 
 class TempPivot(object):
     
     def __cacheLocalMatrix(self):
-        if len(self.transformNodes) == 1 and self.masterGroup is not None and self.masterGroup.exists:
-                manager.TempPivotManager.cacheLocalMatrix(self.masterGroup, self.transformNodes[0])
+        #for node in self.transformNodes:
+            #manager.TempPivotManager.cacheLocalMatrix(self.masterGroup, node)
+        manager.TempPivotManager.cacheLocalMatrix(self.masterGroup, self.transformNodes[-1])
     
     def __restoreSelection(self):
         sel = om2.MSelectionList()
         for transformNode in self.transformNodes:
-            sel.add(transformNode.fullPathName)
-        om2.MGlobal.setActiveSelectionList(sel)
+            if transformNode.exists:
+                sel.add(transformNode.fullPathName)
+        if sel.length() > 0:
+            om2.MGlobal.setActiveSelectionList(sel)
         
         
     def __deleteMasterGroup(self):
@@ -25,11 +28,8 @@ class TempPivot(object):
             
             
     def __removeAllCallbacks(self):
-        utils.removeScriptJobCallbacks([self.timeChangedCallbackId, 
-                                        self.endUndoCallbackId])
-                                        
-        utils.removeApiEventCallbacks([self.selectionChangedCallbackId,
-                                       self.updateLocalMatrixCallbackId])
+        utils.removeScriptJobCallbacks([self.timeChangedCallbackId, self.endUndoCallbackId])                            
+        utils.removeApiEventCallbacks([self.selectionChangedCallbackId, self.updateLocalMatrixCallbackId])
     
     
     def __init__(self):
@@ -49,29 +49,26 @@ class TempPivot(object):
         
     
     def _initialize(self):
-        transformNodes = utils.getTransformNodesSorted()
-        if not transformNodes or utils.hasMasterGroup(transformNodes):
+        self.transformNodes = utils.getTransformNodesSorted()
+        if not self.transformNodes or utils.hasMasterGroup(self.transformNodes):
             return False
             
-        self.masterGroup = manager.TempPivotManager.createMasterGroup(transformNodes)
-        for node in transformNodes:
+        self.masterGroup = manager.TempPivotManager.createMasterGroup(self.transformNodes[-1])
+        for node in self.transformNodes:
             offsetMatrix = node.worldMatrix * self.masterGroup.worldInverseMatrix
             self.transformNodesData[node] = offsetMatrix
-        
-        self.transformNodes = list(self.transformNodesData.keys()) 
         self.maxIterations  = max(node.dagPath.length() for node in self.transformNodes)
         return True
         
+        
     def addUndo(self):
         if self.undoStarted:
-            print('start Undo')
             cmds.undoInfo(openChunk=True)
             self.undoStarted = False
         
         
     def endUndo(self, *args):
         if not self.undoStarted:
-            print('end Undo')
             self.undoStarted = True
             cmds.undoInfo(closeChunk=True)
             
@@ -94,17 +91,21 @@ class TempPivot(object):
         
         self.timeChangedCallbackId = cmds.scriptJob(event=['timeChanged', self.updateMasterGroupTransform], protected=True)
         self.endUndoCallbackId     = cmds.scriptJob(attributeChange=['{0}.matrix'.format(self.masterGroup.dagPath.fullPathName()), self.endUndo], protected=True)
-        
+
         
     def updateMasterGroupTransform(self, *args):
         def _updateMasterGroupTransform():
-            if len(self.transformNodes) == 1 and self.masterGroup is not None and self.masterGroup.exists:
-                om2.MEventMessage.removeCallback(self.updateLocalMatrixCallbackId)
-                manager.TempPivotManager.setTransform(self.masterGroup, self.transformNodes[0])
-                self.updateLocalMatrixCallbackId = om2.MDagMessage.addMatrixModifiedCallback(self.masterGroup.dagPath, self.update, None)
-        cmds.evalDeferred(_updateMasterGroupTransform)
-        
-        
+            om2.MEventMessage.removeCallback(self.updateLocalMatrixCallbackId)
+            manager.TempPivotManager.setTransform(self.masterGroup, self.transformNodes[-1])
+            self.updateLocalMatrixCallbackId = om2.MDagMessage.addMatrixModifiedCallback(self.masterGroup.dagPath, self.update, None)
+            for node in self.transformNodes:
+                offsetMatrix = node.worldMatrix * self.masterGroup.worldInverseMatrix
+                self.transformNodesData[node] = offsetMatrix
+                
+        if self.masterGroup is not None and self.masterGroup.exists:
+            cmds.evalDeferred(_updateMasterGroupTransform)
+ 
+ 
     def update(self, mobject, flags, clientData):
         # update transformNodes worldMatrix
         if flags & (om2.MDagMessage.kScale | om2.MDagMessage.kRotation | om2.MDagMessage.kTranslation):
@@ -131,6 +132,6 @@ class TempPivot(object):
             self.__deleteMasterGroup()
             self.__restoreSelection()
             
-            utils.showKeyframesForSelection()
-        
+        utils.showKeyframesForSelection()
         cmds.evalDeferred(_clear)
+        

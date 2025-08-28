@@ -1,8 +1,8 @@
 import numbers
-from maya          import cmds
-from maya.api      import OpenMaya as om2
-from collections   import defaultdict, deque
-from linkTempPivot import nodes, manager
+from maya        import cmds
+from maya.api    import OpenMaya as om2
+from collections import defaultdict, deque
+from           . import nodes, manager
 
 
 def getTransformNodes():
@@ -81,7 +81,7 @@ def removeApiEventCallbacks(indices):
         else:
             om2.MEventMessage.removeCallbacks(indices)
     except:
-        om2.MGlobal.displayWarning('Callback ID is not valid')
+        om2.MGlobal.displayInfo('Callback ID is not valid')
         
         
 def showKeyframesFor(objects):

@@ -1,8 +1,8 @@
 import math
 import json
-import maya.cmds as cmds
-import maya.api.OpenMaya as om2
-from linkTempPivot import nodes
+from maya          import cmds
+from maya.api      import OpenMaya as om2
+from             . import nodes
 
 
 CONTAINER_ATTR_NAME    = 'tempPivotData'
@@ -53,18 +53,6 @@ class TempPivotManager(object):
     
     
     @classmethod
-    def getCenterPosition(cls, transformNodes:list):
-        total = om2.MVector()
-        for node in transformNodes:
-            globalPosition = node.globalPosition
-            total.x += globalPosition.x
-            total.y += globalPosition.y
-            total.z += globalPosition.z  
-        count = len(transformNodes)
-        return total / (count if count > 0 else 1)
-    
-    
-    @classmethod
     def getAsset(cls):
         it    = om2.MItDependencyNodes(om2.MFn.kContainer) 
         depFn = om2.MFnDependencyNode() 
@@ -78,7 +66,7 @@ class TempPivotManager(object):
 
         
     @classmethod
-    def createMasterGroup(cls, transformNodes=None):
+    def createMasterGroup(cls, transformNode=None):
         cmds.undoInfo(stateWithoutFlush=False)
         
         group = cmds.createNode('transform', name='master_group')
@@ -93,11 +81,7 @@ class TempPivotManager(object):
         masterGroup.depFn.isLocked = True
 
         # set transform
-        if len(transformNodes) > 1:
-            centerPosition = cls.getCenterPosition(transformNodes)
-            masterGroup.globalPosition = centerPosition  
-        else:
-            cls.setTransform(masterGroup, transformNodes[0])
+        cls.setTransform(masterGroup, transformNode)
             
         cmds.undoInfo(stateWithoutFlush=True)
         return masterGroup
@@ -128,8 +112,8 @@ class TempPivotManager(object):
     @classmethod
     def cacheLocalMatrix(cls, masterGroup, transformNode):
         container = cls.getAsset()
-        oldData = container.getData()
-        #offsetMatrix = cls.getMasterGroupWorldMatrix(masterGroup) * transformNode.worldInverseMatrix
+        oldData   = container.getData()
+        #offsetMatrix = cls.__getMasterGroupWorldMatrix(masterGroup) * transformNode.worldInverseMatrix
         offsetMatrix = masterGroup.worldMatrix2 * transformNode.worldInverseMatrix
         oldData[transformNode.uuid] = list(offsetMatrix)
         container.setData(oldData)
