@@ -87,7 +87,11 @@ class TransformNode(BaseNode):
     def fullPathName(self):
         return self.dagPath.fullPathName() if self.exists else ''
         
-        
+    
+    @property
+    def rotateOrder(self) -> int:
+        return self.transformFn.rotationOrder() - 1
+            
     @property
     def parentInverseMatrix(self):
         return self.dagPath.exclusiveMatrixInverse()

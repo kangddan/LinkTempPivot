@@ -1,7 +1,8 @@
+import math
 import json
 import maya.cmds as cmds
 import maya.api.OpenMaya as om2
-from . import nodes
+from linkTempPivot import nodes
 
 
 CONTAINER_ATTR_NAME    = 'tempPivotData'
@@ -47,6 +48,7 @@ class ContainerNode(nodes.BaseNode):
         self.depFn.findPlug(CONTAINER_ATTR_NAME, False).setString(json.dumps(data)) 
         self.depFn.findPlug(CONTAINER_ATTR_NAME, False).isLocked = True
 
+
 class TempPivotManager(object):
     
     
@@ -77,22 +79,17 @@ class TempPivotManager(object):
         
     @classmethod
     def createMasterGroup(cls, transformNodes=None):
-        dagMod = om2.MDagModifier()
-        mobj   = dagMod.createNode('transform')
-        dagMod.renameNode(mobj, 'master_group')
-        dagMod.doIt()
-        masterGroup = nodes.TransformNode(mobj)
-
-        # add Attr
-        attrFn   = om2.MFnNumericAttribute()
-        boolAttr = attrFn.create(MASTER_GROUP_ATTR_NAME, 
-                                 MASTER_GROUP_ATTR_NAME, 
-                                 om2.MFnNumericData.kBoolean, 
-                                 True)
-        masterGroup.depFn.addAttribute(boolAttr)
-        cls.connectAsset(masterGroup, cls.getAsset())
+        cmds.undoInfo(stateWithoutFlush=False)
         
-        # Prevent manual deletion of masterGroup
+        group = cmds.createNode('transform', name='master_group')
+        cmds.addAttr(group, ln=MASTER_GROUP_ATTR_NAME, at='bool', dv=True)
+        for attr in ('t', 'r', 's'):
+            for sub in ('x', 'y', 'z'):
+                cmds.setAttr('{0}.{1}'.format(group, attr+sub), keyable=False, channelBox=True)
+        cmds.setAttr('{0}.v'.format(group), keyable=False, channelBox=True)
+        
+        masterGroup = nodes.TransformNode(group)
+        cls.connectAsset(masterGroup, cls.getAsset())
         masterGroup.depFn.isLocked = True
 
         # set transform
@@ -101,25 +98,42 @@ class TempPivotManager(object):
             masterGroup.globalPosition = centerPosition  
         else:
             cls.setTransform(masterGroup, transformNodes[0])
+            
+        cmds.undoInfo(stateWithoutFlush=True)
         return masterGroup
 
 
     @classmethod
     def connectAsset(cls, masterGroup, container):
-        cmds.undoInfo(stateWithoutFlush=False)
         cmds.container(container.name, edit=True, addNode=masterGroup.fullPathName, includeHierarchyBelow=True)
         cmds.container(container.name, edit=True, publishAsRoot=[masterGroup.fullPathName, True])
-        cmds.undoInfo(stateWithoutFlush=True)
+        
+    @classmethod    
+    def __getMasterGroupWorldMatrix(cls, masterGroup):
+        dagPath     = masterGroup.dagPath
+        transformFn = masterGroup.transformFn
+        worldMatrix = masterGroup.worldMatrix
+        
+        globalPose = om2.MVector(om2.MFnTransform(dagPath).rotatePivot(om2.MSpace.kTransform) * worldMatrix)
+        euler      = om2.MEulerRotation(*(math.radians(r) for r in cmds.manipPivot(q=True, o=True)[0]))
+        euler.reorderIt(masterGroup.rotateOrder)
+        
+        transfromMatrix = om2.MTransformationMatrix()
+        transfromMatrix.setTranslation(globalPose, om2.MSpace.kWorld)
+        transfromMatrix.setRotation(euler)
+        
+        return transfromMatrix.asMatrix()
              
              
     @classmethod
     def cacheLocalMatrix(cls, masterGroup, transformNode):
         container = cls.getAsset()
         oldData = container.getData()
+        #offsetMatrix = cls.getMasterGroupWorldMatrix(masterGroup) * transformNode.worldInverseMatrix
         offsetMatrix = masterGroup.worldMatrix2 * transformNode.worldInverseMatrix
         oldData[transformNode.uuid] = list(offsetMatrix)
         container.setData(oldData)
-        
+
         
     @classmethod
     def setTransform(cls, masterGroup, transformNode):
@@ -130,5 +144,3 @@ class TempPivotManager(object):
             masterGroup.worldMatrix = transformNode.worldMatrix
         else:
             masterGroup.worldMatrix = om2.MMatrix(localMatrix) * transformNode.worldMatrix
-
-

@@ -1,104 +1,87 @@
-import maya.cmds as cmds
-import maya.api.OpenMaya as om2
-from collections import defaultdict, deque
-from . import nodes, manager
+from maya          import cmds
+from maya.api      import OpenMaya as om2
+from linkTempPivot import nodes, manager, utils
 
 
 class TempPivot(object):
     
-    def __init__(self):
+    def __cacheLocalMatrix(self):
+        if len(self.transformNodes) == 1 and self.masterGroup is not None and self.masterGroup.exists:
+                manager.TempPivotManager.cacheLocalMatrix(self.masterGroup, self.transformNodes[0])
+    
+    def __restoreSelection(self):
+        sel = om2.MSelectionList()
+        for transformNode in self.transformNodes:
+            sel.add(transformNode.fullPathName)
+        om2.MGlobal.setActiveSelectionList(sel)
         
-        self.callbackIndices    = []
+        
+    def __deleteMasterGroup(self):
+        if self.masterGroup is not None and self.masterGroup.exists:
+            dagMod = om2.MDagModifier()
+            self.masterGroup.depFn.isLocked = False
+            dagMod.deleteNode(self.masterGroup.mobject)
+            dagMod.doIt()
+            
+            
+    def __removeAllCallbacks(self):
+        utils.removeScriptJobCallbacks([self.timeChangedCallbackId, 
+                                        self.endUndoCallbackId])
+                                        
+        utils.removeApiEventCallbacks([self.selectionChangedCallbackId,
+                                       self.updateLocalMatrixCallbackId])
+    
+    
+    def __init__(self):
         self.masterGroup        = None
         self.transformNodesData = {}
         self.transformNodes     = []
-        self.undoStarted        = True
-        self.scriptJobIndex     = -1
-        self.maxIter            = 0
-           
-           
-    @staticmethod
-    def getTransformNodes():
-        transformNodes = []
-        sel = om2.MGlobal.getActiveSelectionList()
-        for i in range(sel.length()):
-            mobj = sel.getDependNode(i)
-            if not mobj.hasFn(om2.MFn.kTransform):
-                continue
-            transformNodes.append(nodes.TransformNode(mobj))
-        return transformNodes
+        self.maxIterations      = 0
         
+        self.undoStarted = True
         
-    @staticmethod
-    def getTransformNodesSorted():
-        sel = om2.MGlobal.getActiveSelectionList()
-        transformNodes = []
-        for i in range(sel.length()):
-            mobj = sel.getDependNode(i)
-            if mobj.hasFn(om2.MFn.kTransform):
-                transformNodes.append(mobj)
+        # Callbacks
+        self.selectionChangedCallbackId  = -1
+        self.updateLocalMatrixCallbackId = -1
         
-        dagNodes = {}
-        hashMap  = {} 
-        for node in transformNodes:
-            handle = om2.MObjectHandle(node)
-            hcode  = handle.hashCode()
-            dagNodes[hcode] = om2.MFnDagNode(node)
-            hashMap[hcode]  = node
-            
-        graph    = defaultdict(list)
-        indegree = defaultdict(int)
-
-        for h1 in dagNodes:
-            dagNode = dagNodes[h1]
-            for h2 in dagNodes:
-                if h1 == h2:
-                    continue
-                if dagNode.isParentOf(hashMap[h2]):
-                    graph[h1].append(h2)
-                    indegree[h2] += 1
+        self.timeChangedCallbackId       = -1
+        self.endUndoCallbackId           = -1
         
-        queue = deque([h for h in dagNodes if indegree[h] == 0])
-        sortedList = []
-        
-        while queue:
-            current = queue.popleft()
-            sortedList.append(hashMap[current])
-            for child in graph[current]:
-                indegree[child] -= 1
-                if indegree[child] == 0:
-                    queue.append(child)
-
-        return [nodes.TransformNode(node) for node in sortedList]
-        
-        
-    @staticmethod
-    def hasMasterGroup(nodes):
-        '''
-        Check whether the node list contains a masterGroup
-        '''
-        return any(node.depFn.hasAttribute(manager.MASTER_GROUP_ATTR_NAME) for node in nodes)
-        
-            
+    
     def _initialize(self):
-        transformNodes = TempPivot.getTransformNodesSorted()
-        if not transformNodes or TempPivot.hasMasterGroup(transformNodes):
+        transformNodes = utils.getTransformNodesSorted()
+        if not transformNodes or utils.hasMasterGroup(transformNodes):
             return False
-
+            
         self.masterGroup = manager.TempPivotManager.createMasterGroup(transformNodes)
-        
         for node in transformNodes:
             offsetMatrix = node.worldMatrix * self.masterGroup.worldInverseMatrix
             self.transformNodesData[node] = offsetMatrix
+        
         self.transformNodes = list(self.transformNodesData.keys()) 
-        self.maxIter        = max(node.dagPath.length() for node in self.transformNodes)
+        self.maxIterations  = max(node.dagPath.length() for node in self.transformNodes)
         return True
         
+    def addUndo(self):
+        if self.undoStarted:
+            print('start Undo')
+            cmds.undoInfo(openChunk=True)
+            self.undoStarted = False
         
+        
+    def endUndo(self, *args):
+        if not self.undoStarted:
+            print('end Undo')
+            self.undoStarted = True
+            cmds.undoInfo(closeChunk=True)
+            
+    
     def setup(self):
         result = self._initialize()
         if not result:
-            return 
+            return  
+        # 0 set Timeline Focus
+        utils.showKeyframesFor([node.fullPathName for node in self.transformNodes])
             
         # 1 selected masterGroup
         om2.MGlobal.clearSelectionList()
@@ -106,52 +89,48 @@ class TempPivot(object):
         cmds.EnterEditModePress()
         
         # 2 add callbacks 
-        self.scriptJobIndex = cmds.scriptJob(attributeChange=[f'{self.masterGroup.dagPath.fullPathName()}.matrix', self.endUndo], protected=True)
-        self.callbackIndices.append(om2.MDagMessage.addMatrixModifiedCallback(self.masterGroup.dagPath, self.update, None))
-        self.callbackIndices.append(om2.MEventMessage.addEventCallback('SelectionChanged', self.clear, None))
-
-
-    def addUndo(self):
-        if self.undoStarted:
-            cmds.undoInfo(openChunk=True)
-            self.undoStarted = False
+        self.selectionChangedCallbackId  = om2.MEventMessage.addEventCallback('SelectionChanged', self.clear, None)
+        self.updateLocalMatrixCallbackId = om2.MDagMessage.addMatrixModifiedCallback(self.masterGroup.dagPath, self.update, None)
+        
+        self.timeChangedCallbackId = cmds.scriptJob(event=['timeChanged', self.updateMasterGroupTransform], protected=True)
+        self.endUndoCallbackId     = cmds.scriptJob(attributeChange=['{0}.matrix'.format(self.masterGroup.dagPath.fullPathName()), self.endUndo], protected=True)
         
         
-    def endUndo(self, *args):
-        self.undoStarted = True
-        cmds.undoInfo(closeChunk=True)
-
-
-    def update(self, *args):
-        self.addUndo()
-        masterMatrix = self.masterGroup.worldMatrix  
-         
-        for _ in range(self.maxIter):
-            nextQueue = []
-            for node in self.transformNodes:
-                newWorldMatrix = self.transformNodesData[node] * masterMatrix   
-                if not node.worldMatrix.isEquivalent(newWorldMatrix, 1e-5):
-                    cmds.xform(node.fullPathName, m=list(newWorldMatrix), ws=True)
-                    nextQueue.append(node) 
-            if not nextQueue:
-                break
-                
-            
-    def clear(self, *args):
-        
-        def _clear():
+    def updateMasterGroupTransform(self, *args):
+        def _updateMasterGroupTransform():
             if len(self.transformNodes) == 1 and self.masterGroup is not None and self.masterGroup.exists:
-                manager.TempPivotManager.cacheLocalMatrix(self.masterGroup, self.transformNodes[0])
+                om2.MEventMessage.removeCallback(self.updateLocalMatrixCallbackId)
+                manager.TempPivotManager.setTransform(self.masterGroup, self.transformNodes[0])
+                self.updateLocalMatrixCallbackId = om2.MDagMessage.addMatrixModifiedCallback(self.masterGroup.dagPath, self.update, None)
+        cmds.evalDeferred(_updateMasterGroupTransform)
+        
+        
+    def update(self, mobject, flags, clientData):
+        # update transformNodes worldMatrix
+        if flags & (om2.MDagMessage.kScale | om2.MDagMessage.kRotation | om2.MDagMessage.kTranslation):
+            self.addUndo()
+            masterMatrix = self.masterGroup.worldMatrix  
+            for _ in range(self.maxIterations):
+                nextQueue = []
+                for node in self.transformNodes:
+                    newWorldMatrix = self.transformNodesData[node] * masterMatrix   
+                    if not node.worldMatrix.isEquivalent(newWorldMatrix, 1e-5):
+                        cmds.xform(node.fullPathName, m=list(newWorldMatrix), ws=True)
+                        nextQueue.append(node) 
+                if not nextQueue:
+                    break
+                    
+        # cache localMatrix            
+        elif flags & (om2.MDagMessage.kScalePivot | om2.MDagMessage.kRotatePivot):
+            self.__cacheLocalMatrix()
                 
-            try: om2.MEventMessage.removeCallbacks(self.callbackIndices)
-            except: pass
-            if cmds.scriptJob(exists=self.scriptJobIndex):
-                cmds.scriptJob(kill=self.scriptJobIndex, force=True)
-                
-            if self.masterGroup is not None and self.masterGroup.exists:
-                dagMod = om2.MDagModifier()
-                self.masterGroup.depFn.isLocked = False
-                dagMod.deleteNode(self.masterGroup.mobject)
-                dagMod.doIt()
 
+    def clear(self, *args):
+        def _clear():
+            self.__removeAllCallbacks()
+            self.__deleteMasterGroup()
+            self.__restoreSelection()
+            
+            utils.showKeyframesForSelection()
+        
         cmds.evalDeferred(_clear)
