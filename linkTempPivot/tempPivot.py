@@ -83,6 +83,7 @@ class TempPivot(object):
         # 1 selected masterGroup
         om2.MGlobal.clearSelectionList()
         om2.MGlobal.selectByName(self.masterGroup.fullPathName)
+        cmds.setToolTo('moveSuperContext')
         cmds.EnterEditModePress()
         
         # 2 add callbacks 
@@ -134,4 +135,5 @@ class TempPivot(object):
             
         utils.showKeyframesForSelection()
         cmds.evalDeferred(_clear)
+
         
