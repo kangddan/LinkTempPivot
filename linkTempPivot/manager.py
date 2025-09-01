@@ -2,7 +2,7 @@ import math
 import json
 from maya          import cmds
 from maya.api      import OpenMaya as om2
-from             . import nodes
+from linkTempPivot import nodes
 
 
 CONTAINER_ATTR_NAME    = 'tempPivotData'
@@ -128,3 +128,4 @@ class TempPivotManager(object):
             masterGroup.worldMatrix = transformNode.worldMatrix
         else:
             masterGroup.worldMatrix = om2.MMatrix(localMatrix) * transformNode.worldMatrix
+
