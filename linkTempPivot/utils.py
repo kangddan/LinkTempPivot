@@ -1,8 +1,8 @@
 import numbers
-from maya        import cmds
-from maya.api    import OpenMaya as om2
-from collections import defaultdict, deque
-from           . import nodes, manager
+from maya          import cmds
+from maya.api      import OpenMaya as om2
+from collections   import defaultdict, deque
+from linkTempPivot import nodes, manager
 
 
 def getTransformNodes():
@@ -97,4 +97,5 @@ def showKeyframesForSelection():
     
     
     
+
 
