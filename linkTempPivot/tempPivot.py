@@ -1,6 +1,6 @@
-from maya     import cmds
-from maya.api import OpenMaya as om2
-from        . import nodes, manager, utils
+from maya          import cmds
+from maya.api      import OpenMaya as om2
+from linkTempPivot import nodes, manager, utils
 
 
 class TempPivot(object):
@@ -137,3 +137,4 @@ class TempPivot(object):
         cmds.evalDeferred(_clear)
 
         
+
