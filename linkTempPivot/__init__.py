@@ -1,4 +1,5 @@
-from .tempPivot import TempPivot
+from linkTempPivot.tempPivot import TempPivot
 
 def create():
+
     TempPivot().setup()
