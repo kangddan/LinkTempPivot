@@ -74,7 +74,7 @@ class TransformNode(BaseNode):
         return self.dagPath.fullPathName() if self.exists else ''
 
     @property
-    def rotateOrder(self) -> int:
+    def rotateOrder(self):
         return self.transformFn.rotationOrder() - 1
             
     @property
@@ -133,3 +133,4 @@ class TransformNode(BaseNode):
     @localPosition.setter
     def localPosition(self, newPosition):
         self.transformFn.setTranslation(newPosition, om2.MSpace.kTransform)
+
